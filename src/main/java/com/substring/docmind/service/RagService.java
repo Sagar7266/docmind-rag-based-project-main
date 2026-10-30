@@ -19,24 +19,30 @@ import org.springframework.ai.vectorstore.filter.Filter;
 import org.springframework.ai.vectorstore.filter.FilterExpressionBuilder;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
 
 import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
 public class RagService {
     private static final Logger log = LoggerFactory.getLogger(RagService.class);
+    private static final String CITATIONS_PREFIX = "[CITATIONS]";
 
     private final VectorStore vectorStore;
     private final AppProperties appProperties;
     private final ChatClient chatClient;
-
     private final ConversationRepository conversationRepository;
+    private final ObjectMapper objectMapper;
 
 
     //to ask any thing related to document
@@ -65,11 +71,7 @@ public class RagService {
 
         String contextText = buildContextString(similarDocuments);
 
-//        String prompt = buildPrompt(request.getQuestion(), contextText);
-
-        //you have to use conversationId to remember the conversation
-        //ChatMemory
-        //ChatMemoryRepository
+        long generationStartedAt = System.nanoTime();
         String answer = this.chatClient
                 .prompt()
                 .system(s -> s.param("doc_context", contextText))
@@ -77,7 +79,8 @@ public class RagService {
                 .advisors(a -> a.param(ChatMemory.CONVERSATION_ID, request.getConversationId()))
                 .call().content();
         long responseTime = System.currentTimeMillis() - startTime;
-        log.info("Completed Q&A in {} ms with {} citations", responseTime, citationDtos.size());
+        log.info("Chat generation completed in {} ms; total Q&A took {} ms with {} citations",
+                (System.nanoTime() - generationStartedAt) / 1_000_000, responseTime, citationDtos.size());
         return ChatResponseDto.builder().answer(answer).conversationId(request.getConversationId() != null ? request.getConversationId() : UUID.randomUUID().toString()).citations(citationDtos).responseTimeMs(responseTime).build();
 
 
@@ -104,6 +107,7 @@ public class RagService {
 
     // this streams
     public Flux<String> streamQuestionAnswer(ChatRequestDto requestDto, User user) {
+        long requestStartedAt = System.nanoTime();
         log.info("Streaming query: '{}'", requestDto.getQuestion());
         String conversationId = requestDto.getConversationId() != null ? requestDto.getConversationId() : UUID.randomUUID().toString();
         requestDto.setConversationId(conversationId);
@@ -116,16 +120,63 @@ public class RagService {
                 requestDto.getMinSimilarity(),
                 user
         );
+        List<CitationDto> citations = relevantDocuments.stream().map(this::mapToCitation).toList();
         String contextText = buildContextString(relevantDocuments);
-//        String userPrompt = buildPrompt(requestDto.getQuestion(), contextText);
-        return chatClient.prompt()
-                .system(s-> s.param("doc_context",contextText))
-                .user(requestDto.getQuestion())
-                .advisors(a -> a.param(ChatMemory.CONVERSATION_ID, requestDto.getConversationId()))
-                .stream()
-                .content()
-                .concatWith(Flux.just("[DONE]"));
+        String citationsPayload;
+        try {
+            citationsPayload = objectMapper.writeValueAsString(citations);
+        } catch (JacksonException e) {
+            throw new IllegalStateException("Unable to serialize chat citations", e);
+        }
+        AtomicBoolean firstTokenLogged = new AtomicBoolean();
+        AtomicReference<Integer> generatedTokenCount = new AtomicReference<>();
+        Flux<String> generatedTokens = Flux.defer(() -> {
+            long generationStartedAt = System.nanoTime();
+            return chatClient.prompt()
+                    .system(s -> s.param("doc_context", contextText))
+                    .user(requestDto.getQuestion())
+                    .advisors(a -> a.param(ChatMemory.CONVERSATION_ID, conversationId))
+                    .stream()
+                    .chatResponse()
+                    .doOnNext(response -> generatedTokenCount.set(
+                            response.getMetadata().getUsage().getCompletionTokens()))
+                    .map(response -> Optional.ofNullable(response.getResult())
+                            .map(result -> result.getOutput().getText())
+                            .orElse(""))
+                    .filter(token -> !token.isEmpty())
+                    .doOnNext(token -> {
+                        if (firstTokenLogged.compareAndSet(false, true)) {
+                            log.info("Chat generation time to first token: {} ms",
+                                    (System.nanoTime() - generationStartedAt) / 1_000_000);
+                        }
+                    })
+                    .doOnComplete(() -> {
+                        long generationDurationMs = (System.nanoTime() - generationStartedAt) / 1_000_000;
+                        Integer outputTokens = generatedTokenCount.get();
+                        if (outputTokens != null && generationDurationMs > 0) {
+                            log.info(
+                                    "Chat generation completed in {} ms with {} output tokens ({} tokens/s); total stream request took {} ms",
+                                    generationDurationMs,
+                                    outputTokens,
+                                    outputTokens * 1000.0 / generationDurationMs,
+                                    (System.nanoTime() - requestStartedAt) / 1_000_000
+                            );
+                        } else {
+                            log.info(
+                                    "Chat generation completed in {} ms; output token usage unavailable; total stream request took {} ms",
+                                    generationDurationMs,
+                                    (System.nanoTime() - requestStartedAt) / 1_000_000
+                            );
+                        }
+                    })
+                    .doOnError(error -> log.error("Chat generation failed", error));
+        });
 
+        return Flux.concat(
+                Flux.just(CITATIONS_PREFIX + citationsPayload),
+                generatedTokens,
+                Flux.just("[DONE]")
+        );
 
     }
 
@@ -250,8 +301,10 @@ public class RagService {
 
 
         try {
+            long retrievalStartedAt = System.nanoTime();
             List<Document> documents = vectorStore.similaritySearch(searchRequestBuilder.build());
-            log.info("Retrieved {} chunks for query: '{}' (scoped docId: {})", documents.size(), query, documentId);
+            log.info("Vector retrieval (including query embedding) completed in {} ms; retrieved {} chunks for scoped docId {}",
+                    (System.nanoTime() - retrievalStartedAt) / 1_000_000, documents.size(), documentId);
             return documents;
         } catch (Exception e) {
             log.error("Similarity search failed for query: '{}'", query, e);

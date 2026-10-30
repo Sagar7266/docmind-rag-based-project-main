@@ -15,7 +15,7 @@ graph TD
         Advisor["MessageChatMemoryAdvisor"]
         ChatMem["JpaChatMemory"]
         DB[("PostgreSQL DB")]
-        LLM["OpenAI LLM"]
+        LLM["Ollama LLM"]
 
         Advisor -->|Read prior messages| ChatMem
         ChatMem -->|Fetch history by conversationId| DB
@@ -43,7 +43,7 @@ sequenceDiagram
     participant Mem as JpaChatMemory
     participant DB as PostgreSQL DB
     participant Vec as PGVector Store
-    participant LLM as OpenAI LLM
+    participant LLM as Ollama LLM
 
     User->>Ctrl: POST /api/v1/chat/query (question, conversationId)
     Ctrl->>Rag: askQuestion(request, authenticatedUser)

@@ -15,26 +15,26 @@ spring:
         format_sql: true
 
 
-  # Google Gemini configuration
+  # Local Ollama chat and embedding models
   ai:
-    google:
-      genai:
-        api-key: ${GEMINI_API_KEY:AQ.Ab8RN6LhlrRlEJcZdBfb8kITGP5BAGf1C90ToL66cMdGq4ZS7Q}
-        chat:
-          model: ${GEMINI_CHAT_MODEL:gemini-3.8-flash}
-          temperature: 0.2
-        embedding:
-          api-key: ${GEMINI_API_KEY:AQ.Ab8RN6LhlrRlEJcZdBfb8kITGP5BAGf1C90ToL66cMdGq4ZS7Q}
-          text:
-            model: ${GEMINI_EMBEDDING_MODEL:gemini-embedding-001}
-            task-type: RETRIEVAL_DOCUMENT
-            dimensions: 1536
+    ollama:
+      base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
+      chat:
+        model: ${OLLAMA_CHAT_MODEL:qwen3.5:9b}
+        temperature: 0.2
+        think: ${OLLAMA_CHAT_THINK:FALSE}
+       # num-predict: ${OLLAMA_CHAT_MAX_TOKENS:256}
+      embedding:
+        model: ${OLLAMA_EMBEDDING_MODEL:qwen3-embedding:0.6b}
+      init:
+        pull-model-strategy: never
     vectorstore:
       pgvector:
         index-type: HNSW
         distance-type: COSINE_DISTANCE
-        # Existing OpenAI vectors must be re-embedded before Gemini search.
-        dimensions: 1536
+        # qwen3-embedding:0.6b outputs 1024-dimensional vectors by default.
+        # Reuse vector_store; migrate its empty embedding column if needed.
+        dimensions: 1024
         table-name: vector_store
         schema-name: public
         initialize-schema: true
@@ -50,7 +50,7 @@ app:
   rag:
     chunk-size: 700
 #    chunk-overlap: 100
-    top-k: 5
+    top-k: 2
     similarity-threshold: 0.0
 
   cors:
@@ -63,7 +63,7 @@ app:
 
 
 jwt:
-  secret: ${JWT_SECRET:digiRudranshSagarGupta}
+  secret: ${JWT_SECRET:kR8vN2xQp7mL5zT9aB4cD6eF1gH3jK0wY8uI5oP2sXc=}
   expiration: 3600000
 
 
