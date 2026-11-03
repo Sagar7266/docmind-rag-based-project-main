@@ -45,6 +45,8 @@ public class SecurityConfig {
                                         .dispatcherTypeMatchers(DispatcherType.ERROR, DispatcherType.ASYNC).permitAll()
                                         .requestMatchers(
                                                 "/api/v1/auth/**",
+                                                "/actuator/health",
+                                                "/actuator/health/**",
                                                 "/v3/api-docs/**",
                                                 "/swagger-ui/**",
                                                 "/swagger-ui.html").permitAll()

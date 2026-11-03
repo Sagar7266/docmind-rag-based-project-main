@@ -11,11 +11,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.modelmapper.ModelMapper;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
-import org.springframework.ai.chat.client.advisor.SimpleLoggerAdvisor;
 import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.ui.ModelMap;
 
 @Slf4j
 @Configuration
@@ -35,7 +33,7 @@ public class ProjectConfig {
                         Document context:
                         {doc_context}
                         """)
-                .defaultAdvisors(new SimpleLoggerAdvisor(), MessageChatMemoryAdvisor.builder(memory).build())
+                .defaultAdvisors(MessageChatMemoryAdvisor.builder(memory).build())
                 .build();
     }
 
@@ -49,7 +47,7 @@ public class ProjectConfig {
                 .info(
                         new Info()
                                 .title("DocMind — AI Document Intelligence & RAG backend")
-                                .description("REST API for DocMind: Multi-format document ingestion, vector embeddings with PostgreSQL pgvector, and hybrid conversational Q&A with Ollama.")
+                                .description("REST API for DocMind: Multi-format document ingestion, vector embeddings with PostgreSQL pgvector, and hybrid conversational Q&A with configurable AI providers.")
 
                                 .version("1.0.0")
                                 .contact(new Contact()

@@ -1,6 +1,6 @@
 spring:
   profiles:
-    active: dev
+    default: bedrock-local
   application:
     name: docmind-backend
 server:

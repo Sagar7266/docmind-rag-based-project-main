@@ -1,0 +1,10 @@
+{
+	email {$ACME_EMAIL}
+}
+
+{$API_DOMAIN} {
+	encode zstd gzip
+	reverse_proxy api:8081 {
+		flush_interval -1
+	}
+}

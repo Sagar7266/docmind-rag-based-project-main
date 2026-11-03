@@ -1,0 +1,61 @@
+#!/bin/bash
+set -euo pipefail
+
+dnf update -y
+dnf install -y docker awscli xfsprogs cronie
+systemctl enable --now docker
+systemctl enable --now amazon-ssm-agent || true
+systemctl enable --now crond
+
+COMPOSE_ARCH=$(uname -m)
+if [ "$COMPOSE_ARCH" = "aarch64" ]; then COMPOSE_ARCH="aarch64"; else COMPOSE_ARCH="x86_64"; fi
+curl -fsSL "https://github.com/docker/compose/releases/download/v2.29.2/docker-compose-linux-$COMPOSE_ARCH" -o /usr/local/bin/docker-compose
+chmod +x /usr/local/bin/docker-compose
+
+mkdir -p /opt/docmind
+DATA_DEVICE="/dev/disk/by-id/nvme-Amazon_Elastic_Block_Store_${data_volume_id}"
+until [ -e "$DATA_DEVICE" ]; do sleep 2; done
+if ! blkid "$DATA_DEVICE" >/dev/null 2>&1; then
+  mkfs -t xfs "$DATA_DEVICE"
+fi
+DATA_UUID=$(blkid -s UUID -o value "$DATA_DEVICE")
+grep -q "$DATA_UUID" /etc/fstab || echo "UUID=$DATA_UUID /opt/docmind xfs defaults,nofail 0 2" >> /etc/fstab
+mount /opt/docmind
+mkdir -p /opt/docmind/data/postgres /opt/docmind/data/caddy /opt/docmind/data/caddy-config
+chmod 700 /opt/docmind/data
+
+if [ ! -f /opt/docmind/data/runtime.env ]; then
+  DB_PASSWORD=$(openssl rand -hex 32)
+  JWT_SECRET=$(openssl rand -base64 48 | tr -d '\n')
+  cat > /opt/docmind/data/runtime.env <<EOF
+DB_USER=docmind
+DB_PASSWORD=$DB_PASSWORD
+JWT_SECRET=$JWT_SECRET
+AWS_REGION=${aws_region}
+APP_CORS_ALLOWED_ORIGINS=https://pending.invalid
+SPRING_PROFILES_ACTIVE=prod
+BEDROCK_CHAT_MODEL=${chat_model}
+BEDROCK_EMBEDDING_MODEL=${embedding_model}
+EOF
+  chmod 600 /opt/docmind/data/runtime.env
+fi
+
+echo '${init_sql_base64}' | base64 -d > /opt/docmind/init.sql
+echo '${caddyfile_base64}' | base64 -d > /opt/docmind/Caddyfile
+echo '${compose_base64}' | base64 -d > /opt/docmind/compose.yaml
+chmod 600 /opt/docmind/compose.yaml
+
+docker-compose --env-file /opt/docmind/data/runtime.env -f /opt/docmind/compose.yaml up -d postgres caddy
+
+cat > /usr/local/bin/docmind-backup <<'BACKUP'
+#!/bin/bash
+set -euo pipefail
+source /opt/docmind/data/runtime.env
+BACKUP_FILE="/tmp/docmind-postgres-$(date -u +%Y%m%dT%H%M%SZ).sql.gz"
+docker exec docmind-postgres pg_dump -U "$DB_USER" docmind | gzip > "$BACKUP_FILE"
+aws s3 cp "$BACKUP_FILE" "s3://${backup_bucket}/postgres/$(basename "$BACKUP_FILE")" --region "$AWS_REGION" --only-show-errors
+rm -f "$BACKUP_FILE"
+BACKUP
+chmod 700 /usr/local/bin/docmind-backup
+echo '0 2 * * * root /usr/local/bin/docmind-backup >> /var/log/docmind-backup.log 2>&1' > /etc/cron.d/docmind-backup
+chmod 644 /etc/cron.d/docmind-backup

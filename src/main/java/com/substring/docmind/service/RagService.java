@@ -55,7 +55,7 @@ public class RagService {
 
         ensureConversationExists(conversationId, user, request.getQuestion());
 
-        log.info("Processing query: '{}', scoped documentId: {}", request.getQuestion(), request.getDocumentId());
+        log.info("Processing chat request; scoped documentId: {}", request.getDocumentId());
 
 
         List<Document> similarDocuments = this.retrieveRelevantDocuments(
@@ -108,7 +108,7 @@ public class RagService {
     // this streams
     public Flux<String> streamQuestionAnswer(ChatRequestDto requestDto, User user) {
         long requestStartedAt = System.nanoTime();
-        log.info("Streaming query: '{}'", requestDto.getQuestion());
+        log.info("Processing streaming chat request; scoped documentId: {}", requestDto.getDocumentId());
         String conversationId = requestDto.getConversationId() != null ? requestDto.getConversationId() : UUID.randomUUID().toString();
         requestDto.setConversationId(conversationId);
         ensureConversationExists(conversationId, user, requestDto.getQuestion());
@@ -307,7 +307,7 @@ public class RagService {
                     (System.nanoTime() - retrievalStartedAt) / 1_000_000, documents.size(), documentId);
             return documents;
         } catch (Exception e) {
-            log.error("Similarity search failed for query: '{}'", query, e);
+            log.error("Similarity search failed", e);
             return Collections.emptyList();
         }
 

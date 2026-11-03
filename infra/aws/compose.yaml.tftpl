@@ -1,0 +1,62 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: docmind-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: docmind
+      POSTGRES_USER: $${DB_USER}
+      POSTGRES_PASSWORD: $${DB_PASSWORD}
+    volumes:
+      - /opt/docmind/data/postgres:/var/lib/postgresql/data
+      - /opt/docmind/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${DB_USER} -d docmind"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    mem_limit: 640m
+    networks:
+      docmind:
+        aliases:
+          - postgres
+
+  api:
+    image: ${backend_image}
+    container_name: docmind-api
+    restart: unless-stopped
+    env_file:
+      - /opt/docmind/data/runtime.env
+    environment:
+      DB_URL: jdbc:postgresql://postgres:5432/docmind
+      DB_USER: $${DB_USER}
+      DB_PASSWORD: $${DB_PASSWORD}
+      SPRING_PROFILES_ACTIVE: prod
+    depends_on:
+      postgres:
+        condition: service_healthy
+    mem_limit: 768m
+    networks:
+      - docmind
+
+  caddy:
+    image: caddy:2
+    container_name: docmind-caddy
+    restart: unless-stopped
+    environment:
+      API_DOMAIN: "${api_domain}"
+      ACME_EMAIL: "${acme_email}"
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /opt/docmind/Caddyfile:/etc/caddy/Caddyfile:ro
+      - /opt/docmind/data/caddy:/data
+      - /opt/docmind/data/caddy-config:/config
+    mem_limit: 128m
+    networks:
+      - docmind
+
+networks:
+  docmind:
+    name: docmind

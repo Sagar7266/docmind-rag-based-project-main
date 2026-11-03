@@ -1,5 +1,11 @@
 HELP.md
 target/
+.env
+.env.*
+!.env.example
+terraform.tfstate
+terraform.tfstate.*
+*.tfplan
 .mvn/wrapper/maven-wrapper.jar
 !**/src/main/**/target/
 !**/src/test/**/target/
