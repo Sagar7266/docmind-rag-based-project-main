@@ -1,0 +1,10 @@
+.git
+.idea
+.mvn
+target
+frontend
+*.iml
+.env
+.env.*
+!.env.example
+*.log
