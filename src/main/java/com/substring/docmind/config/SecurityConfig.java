@@ -17,6 +17,8 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
+import jakarta.servlet.DispatcherType;
+
 @Configuration
 @RequiredArgsConstructor
 @EnableMethodSecurity(prePostEnabled = true)
@@ -40,22 +42,25 @@ public class SecurityConfig {
                 .authorizeHttpRequests(
                         auth ->
                                 auth
+                                        .dispatcherTypeMatchers(DispatcherType.ERROR, DispatcherType.ASYNC).permitAll()
                                         .requestMatchers(
                                                 "/api/v1/auth/**",
                                                 "/v3/api-docs/**",
                                                 "/swagger-ui/**",
-                                                "/swagger-ui.html").permitAll()
+                                                "/swagger-ui.html",
+                                                "/actuator/health",
+                                                "/actuator/health/**").permitAll()
                                         .requestMatchers("/api/v1/admin/**").hasRole(Role.ADMIN.toString())
                                         .requestMatchers("/api/v1/**").hasRole(Role.USER.toString())
                                         .anyRequest().authenticated()
                 )
                 .addFilterAfter(authenticationFilter, UsernamePasswordAuthenticationFilter.class)
                 .exceptionHandling(exception ->
-                        exception.authenticationEntryPoint((request, response, authException) ->
-                        {
-                            System.out.println("Unauthorized");
-                            response.sendError(HttpStatus.UNAUTHORIZED.value(), "Unauthorized");
-                        }))
+                        exception
+                                .authenticationEntryPoint((request, response, authException) ->
+                                        response.sendError(HttpStatus.UNAUTHORIZED.value(), "Unauthorized"))
+                                .accessDeniedHandler((request, response, accessDeniedException) ->
+                                        response.sendError(HttpStatus.FORBIDDEN.value(), "Forbidden")))
         ;
 
         return httpSecurity.build();

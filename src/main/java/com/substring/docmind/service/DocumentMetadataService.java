@@ -138,16 +138,12 @@ public class DocumentMetadataService {
         DocumentMetadata documentMetadata = documentMetadataRepo.findById(id).orElseThrow(() -> new ResourceNotFoundException("Document with given id not found !!"));
 
 
+        int deletedCount = jdbcTemplate.update(
+                "DELETE FROM vector_store WHERE metadata->>'documentId' = ?",
+                id.toString()
+        );
+        log.info("Deleted {} vector chunks for document id {}", deletedCount, id);
         documentMetadataRepo.delete(documentMetadata);
-        //delete the vector entries
-        try {
-            String deleteVectorsSql = "DELETE FROM vector_store WHERE metadata->>'documentId' = ?";
-            int deletedCount = jdbcTemplate.update(deleteVectorsSql, id.toString());
-            log.info("Deleted {} vector chunks for document id {} ", deletedCount, id);
-
-        } catch (Exception e) {
-            log.warn("cloud not delete vectors from vector store directly: {}", e.getMessage());
-        }
 
     }
 }

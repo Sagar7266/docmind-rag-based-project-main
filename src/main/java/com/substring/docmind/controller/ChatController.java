@@ -52,7 +52,10 @@ public class ChatController {
     }
 
     @PostMapping(value = "/stream", produces = org.springframework.http.MediaType.TEXT_EVENT_STREAM_VALUE)
-    @Operation(summary = "Stream real-time Q&A answer tokens via Server-Sent Events (SSE)")
+    @Operation(
+            summary = "Stream real-time Q&A answer tokens via Server-Sent Events (SSE)",
+            description = "The stream starts with a [CITATIONS] metadata event, followed by answer tokens and a [DONE] marker."
+    )
     public Flux<String> streamQuestion(
             @Valid @RequestBody ChatRequestDto requestDto,
             Authentication authentication

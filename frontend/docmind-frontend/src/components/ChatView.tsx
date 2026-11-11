@@ -468,13 +468,6 @@ const ChatView: React.FC = () => {
     const controller = new AbortController();
     abortRef.current = controller;
 
-    // Fetch citations in parallel so it doesn't block UI after streaming ends
-    const citationPromise = chatApi.searchSimilarity({
-      query: question,
-      documentId: selectedDocumentId ?? undefined,
-      topK: 5,
-    }).catch(() => null);
-
     try {
       const response = await chatApi.stream(
         {
@@ -502,6 +495,7 @@ const ChatView: React.FC = () => {
       const decoder = new TextDecoder();
       let buffer = '';
       let accumulated = '';
+      let citations: CitationDto[] = [];
       let streamEnded = false;
       let lastRenderTime = 0;
       const THROTTLE_MS = 35; // 35ms buffer to avoid excessive React renders on individual tokens
@@ -548,6 +542,10 @@ const ChatView: React.FC = () => {
                 streamEnded = true;
                 break;
               }
+              if (eventData.startsWith('[CITATIONS]')) {
+                citations = JSON.parse(eventData.slice('[CITATIONS]'.length)) as CitationDto[];
+                continue;
+              }
               accumulated += eventData;
             }
           }
@@ -579,7 +577,9 @@ const ChatView: React.FC = () => {
         }
         if (dataLines.length > 0) {
           const eventData = dataLines.join('\n');
-          if (eventData.trim() !== '[DONE]') {
+          if (eventData.startsWith('[CITATIONS]')) {
+            citations = JSON.parse(eventData.slice('[CITATIONS]'.length)) as CitationDto[];
+          } else if (eventData.trim() !== '[DONE]') {
             accumulated += eventData;
           }
         }
@@ -601,20 +601,11 @@ const ChatView: React.FC = () => {
         bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
       }
 
-      // Attach citations once similarity search finishes in background
-      const simRes = await citationPromise;
-      if (simRes?.data?.matches?.length) {
-        await updateMessageMetadata(convId, assistantMsgId, {
-          citations: simRes.data.matches,
-          responseTimeMs,
-          isStreaming: false,
-        });
-      } else {
-        await updateMessageMetadata(convId, assistantMsgId, {
-          responseTimeMs,
-          isStreaming: false,
-        });
-      }
+      await updateMessageMetadata(convId, assistantMsgId, {
+        citations,
+        responseTimeMs,
+        isStreaming: false,
+      });
 
     } catch (err: unknown) {
       if ((err as Error).name === 'AbortError') {

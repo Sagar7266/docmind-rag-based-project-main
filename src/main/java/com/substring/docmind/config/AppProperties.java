@@ -1,6 +1,5 @@
 package com.substring.docmind.config;
 
-import jakarta.websocket.server.ServerEndpoint;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
