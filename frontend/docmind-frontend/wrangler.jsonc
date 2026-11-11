@@ -1,0 +1,17 @@
+{
+  "name": "docmind-rag-based-project-main",
+  "main": "worker.js",
+  "compatibility_date": "2025-01-01",
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+  "vars": {
+    "BACKEND_URL": "https://docmind-rag-based-project-main-production.up.railway.app"
+  },
+  "observability": {
+    "enabled": true
+  }
+}
