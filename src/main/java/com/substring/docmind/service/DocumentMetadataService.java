@@ -9,11 +9,11 @@ import com.substring.docmind.exception.DocumentProcessingException;
 import com.substring.docmind.exception.ResourceNotFoundException;
 import com.substring.docmind.repository.DocumentMetadataRepo;
 import jakarta.transaction.Transactional;
-import lombok.RequiredArgsConstructor;
 import org.modelmapper.ModelMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.document.Document;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
@@ -22,19 +22,40 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.regex.Pattern;
 
 @Service
-@RequiredArgsConstructor
 public class DocumentMetadataService {
 
 
     private static final Logger log = LoggerFactory.getLogger(DocumentMetadataService.class);
+    private static final Pattern SQL_IDENTIFIER = Pattern.compile("[A-Za-z_][A-Za-z0-9_]*");
 
     private final DocumentMetadataRepo documentMetadataRepo;
     private final DocumentParserService parserService;
     private final DocumentIngestionService ingestionService;
     private final ModelMapper modelMapper;
     private final JdbcTemplate jdbcTemplate;
+    private final String vectorStoreTableName;
+    private final String vectorStoreSchemaName;
+
+    public DocumentMetadataService(
+            DocumentMetadataRepo documentMetadataRepo,
+            DocumentParserService parserService,
+            DocumentIngestionService ingestionService,
+            ModelMapper modelMapper,
+            JdbcTemplate jdbcTemplate,
+            @Value("${spring.ai.vectorstore.pgvector.table-name}") String vectorStoreTableName,
+            @Value("${spring.ai.vectorstore.pgvector.schema-name}") String vectorStoreSchemaName
+    ) {
+        this.documentMetadataRepo = documentMetadataRepo;
+        this.parserService = parserService;
+        this.ingestionService = ingestionService;
+        this.modelMapper = modelMapper;
+        this.jdbcTemplate = jdbcTemplate;
+        this.vectorStoreTableName = quoteSqlIdentifier(vectorStoreTableName);
+        this.vectorStoreSchemaName = quoteSqlIdentifier(vectorStoreSchemaName);
+    }
 
 
     //method to upload and parse document
@@ -139,11 +160,19 @@ public class DocumentMetadataService {
 
 
         int deletedCount = jdbcTemplate.update(
-                "DELETE FROM vector_store WHERE metadata->>'documentId' = ?",
+                "DELETE FROM " + vectorStoreSchemaName + "." + vectorStoreTableName
+                        + " WHERE metadata->>'documentId' = ?",
                 id.toString()
         );
         log.info("Deleted {} vector chunks for document id {}", deletedCount, id);
         documentMetadataRepo.delete(documentMetadata);
 
+    }
+
+    private static String quoteSqlIdentifier(String identifier) {
+        if (identifier == null || !SQL_IDENTIFIER.matcher(identifier).matches()) {
+            throw new IllegalArgumentException("Invalid PGVector SQL identifier");
+        }
+        return "\"" + identifier + "\"";
     }
 }
