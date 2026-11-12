@@ -182,6 +182,10 @@ const Login: React.FC = () => {
           </div>
         </div>
       </motion.div>
+      {/* Copyright Footer */}
+      <p className="mt-8 text-center text-xs text-slate-500 relative z-10">
+        © {new Date().getFullYear()} DocMind AI by Sagar Gupta. All rights reserved.
+      </p>
     </div>
   );
 };
